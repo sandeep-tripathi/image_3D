@@ -19,7 +19,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install papermill
+        pip install papermill google-auth google-auth-oauthlib google-auth-httplib2
 
     - name: Download Colab notebook
       run: wget https://raw.githubusercontent.com/your-username/your-repo/main/path/to/example.ipynb -O example.ipynb
@@ -27,8 +27,37 @@ jobs:
     - name: Execute Colab notebook
       run: papermill example.ipynb output.ipynb
 
-    - name: Upload output notebook
+    - name: Download output from Google Drive
+      env:
+        GOOGLE_DRIVE_CREDENTIALS: ${{ secrets.GOOGLE_DRIVE_CREDENTIALS }}
+      run: |
+        echo "$GOOGLE_DRIVE_CREDENTIALS" > credentials.json
+        python - <<EOF
+        from google.colab import drive
+        from google.oauth2 import service_account
+        from googleapiclient.discovery import build
+        import os
+
+        # Authenticate using service account
+        credentials = service_account.Credentials.from_service_account_file('credentials.json', scopes=['https://www.googleapis.com/auth/drive'])
+        service = build('drive', 'v3', credentials=credentials)
+
+        # Find the file in Google Drive
+        file_id = 'your-file-id'  # Replace with your file ID
+        request = service.files().get_media(fileId=file_id)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while done is False:
+            status, done = downloader.next_chunk()
+            print("Download %d%%." % int(status.progress() * 100))
+
+        with open('output.txt', 'wb') as f:
+            f.write(fh.getvalue())
+        EOF
+
+    - name: Upload output file
       uses: actions/upload-artifact@v2
       with:
-        name: output-notebook
-        path: output.ipynb
+        name: output-file
+        path: output.txt
